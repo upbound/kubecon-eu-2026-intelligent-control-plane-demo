@@ -1,11 +1,55 @@
 # configuration-cache
 
-KubeCon EU 2026 — Intelligent Control Plane Demo
+KubeCon EU 2026 — [Intelligent Control Plane Demo](https://sched.co/2CVzm)
 
 This Crossplane configuration package demonstrates AI-driven cache management on Azure, showcasing two capabilities:
 
 - **Intelligent Assistance**: AI diagnoses stuck resources and annotates root cause + remediation steps
 - **Intelligent Control**: AI auto-remediates misconfigurations and optimizes costs — with human authorization
+
+## Architecture
+
+```mermaid
+sequenceDiagram
+    participant SRE
+    participant Crossplane
+    participant AI as AI Controller
+    participant Azure
+
+    SRE->>Crossplane: ./demo.sh setup<br/>(demo-stuck ardId=ARD-MISSING, demo-costly sku=xl)
+    Crossplane->>Azure: reconcile → stuck (no ResourceGroup match)
+
+    rect rgb(40, 60, 80)
+        Note over SRE,AI: Stage 2 — Intelligent Assistance
+        SRE->>Crossplane: ./demo.sh before-1
+        Crossplane-->>SRE: Unready conditions, cryptic events — no context
+        AI->>Crossplane: watches Cache, detects stuck state
+        AI->>Crossplane: annotate diagnosis + last-diagnosed
+        SRE->>Crossplane: ./demo.sh after-1
+        Crossplane-->>SRE: cache.mbcp.cloud/diagnosis = root cause + steps
+    end
+
+    rect rgb(40, 70, 50)
+        Note over SRE,Azure: Stage 3 — Intelligent Control (Remediation)
+        SRE->>Crossplane: ./demo.sh remediate<br/>(sets allow-auto-remediation=true)
+        AI->>Crossplane: watches label → patches spec.parameters.ardId
+        AI->>Crossplane: annotate auto-remediated
+        Crossplane->>Azure: reconcile with correct ardId → cache recovers
+    end
+
+    rect rgb(70, 50, 30)
+        Note over SRE,Azure: Stage 4 — Cost Optimization
+        SRE->>Crossplane: ./demo.sh cost-before
+        Crossplane-->>SRE: sku=xl, no cost context
+        AI->>Crossplane: analyzes usage → annotate cost-recommendation
+        SRE->>Crossplane: ./demo.sh cost-after
+        Crossplane-->>SRE: cache.mbcp.cloud/cost-recommendation = downscale to s
+        SRE->>Crossplane: ./demo.sh cost-optimize<br/>(sets allow-cost-optimization=true)
+        AI->>Crossplane: watches label → patches spec.parameters.sku
+        AI->>Crossplane: annotate cost-optimized
+        Crossplane->>Azure: reprovision at lower SKU
+    end
+```
 
 ## Demo Flow
 
