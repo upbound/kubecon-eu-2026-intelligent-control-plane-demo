@@ -1,0 +1,102 @@
+apiVersion: ops.crossplane.io/v1alpha1
+kind: WatchOperation
+metadata:
+  name: cache-cost-optimizer
+  labels:
+    provider: azure
+    type: cost-optimizer
+spec:
+  concurrencyPolicy: Forbid
+  successfulHistoryLimit: 5
+  failedHistoryLimit: 2
+
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+      - step: upbound-function-openai
+        functionRef:
+          name: upbound-function-openai
+        input:
+          apiVersion: openai.fn.upbound.io/v1alpha1
+          kind: Prompt
+          systemPrompt: |
+            You are a Crossplane Cache cost optimization agent for an Azure Redis platform.
+            You apply approved cost optimization recommendations by patching Cache composite resources.
+            You only act when explicitly authorized via annotation and only for known safe downgrades.
+            Return a JSON patch for the Cache resource.
+          userPrompt: |
+            Analyze this Cache XR and apply cost optimization.
+
+            IDEMPOTENCY CHECK:
+            - If "cache.mbcp.cloud/cost-optimized" is already set, return a no-op (already optimized).
+
+            VALID SKU VALUES (in cost order, lowest to highest):
+            xs, s, m, l, xl
+
+            DOWNSCALE PATH (one step only):
+            xl → l, l → m, m → s, s → xs
+
+            OPTIMIZATION RULES:
+            Rule 1 — Apply recommendation:
+              Condition: "cache.mbcp.cloud/cost-recommendation" annotation starts with "downscale from"
+              Action: extract target SKU from recommendation string, patch spec.parameters.sku
+              Write: cache.mbcp.cloud/cost-optimized = "<timestamp>: patched sku <old> → <new>"
+
+            SAFETY CONSTRAINTS:
+            - Only downgrade, never upgrade
+            - New SKU must be exactly one step down from current SKU
+            - Current SKU must be read from spec.parameters.sku (not the recommendation string)
+            - If recommendation target does not match valid one-step downgrade, return no-op
+            - Never patch any field other than spec.parameters.sku
+
+            OUTPUT FORMAT:
+            For optimization applied:
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
+                "annotations": {
+                  "cache.mbcp.cloud/cost-optimized": "<timestamp-iso8601>: patched sku <old-value> → <new-value>"
+                }
+              },
+              "spec": {
+                "parameters": {
+                  "sku": "<target-sku>"
+                }
+              }
+            }
+
+            For no-op (unauthorized, already optimized, or unsafe):
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>"
+              }
+            }
+
+            Rules:
+            - Use exact resource name and namespace from input
+            - Use current timestamp in ISO8601 format (YYYY-MM-DDTHH:MM:SSZ)
+            - Output only the JSON patch, no explanatory text
+
+            Cache XR:
+            {{ .Resources }}
+        credentials:
+        - name: gpt
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: gpt
+      retryLimit: 3
+  watch:
+    apiVersion: data.mbcp.cloud/v1alpha2
+    kind: Cache
+    matchLabels:
+      ai: enabled
+      cost-analysis: enabled
+      allow-cost-optimization: "true"

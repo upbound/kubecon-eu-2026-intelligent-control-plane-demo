@@ -1,0 +1,41 @@
+apiVersion: meta.dev.upbound.io/v2alpha1
+kind: Project
+metadata:
+  name: configuration-cache
+spec:
+  apiDependencies:
+  - k8s:
+      version: v1.33.0
+    type: k8s
+  dependsOn:
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Function
+    package: xpkg.upbound.io/crossplane-contrib/function-auto-ready
+    version: '>=v0.0.0'
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Function
+    package: xpkg.upbound.io/upbound/function-openai
+    version: '>=v0.3.3'
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.upbound.io/upbound/provider-family-azure
+    version: '>=v2.0.0'
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.upbound.io/upbound/provider-azure-cache
+    version: '>=v2.0.0'
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.upbound.io/upbound/provider-azure-network
+    version: '>=v2.0.0'
+  - apiVersion: pkg.crossplane.io/v1
+    kind: Provider
+    package: xpkg.upbound.io/upbound/provider-kubernetes
+    version: '>=v1.0.0'
+  description: This is where you can describe your project.
+  license: Apache-2.0
+  maintainer: Upbound User <user@example.com>
+  readme: |
+    This is where you can add a readme for your project.
+  repository: xpkg.upbound.io/solutions/configuration-cache
+  source: github.com/upbound/project-template-scratch

@@ -1,0 +1,122 @@
+apiVersion: ops.crossplane.io/v1alpha1
+kind: WatchOperation
+metadata:
+  name: cache-cost-analysis
+  labels:
+    provider: azure
+    type: cost-analysis
+spec:
+  concurrencyPolicy: Forbid
+  successfulHistoryLimit: 5
+  failedHistoryLimit: 2
+
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+      - step: upbound-function-openai
+        functionRef:
+          name: upbound-function-openai
+        input:
+          apiVersion: openai.fn.upbound.io/v1alpha1
+          kind: Prompt
+          systemPrompt: |
+            You are a Cache cost optimization advisor for an Azure Redis platform.
+            You analyze Cache composite resources and recommend SKU downgrades when
+            the resource is consistently using a lower-cost backend or running at
+            a tier higher than needed.
+            Return a JSON patch for the Cache resource with cost analysis annotations.
+          userPrompt: |
+            Analyze this Cache XR for cost optimization opportunities.
+
+            RATE LIMITING:
+            - If "cache.mbcp.cloud/cost-analysis-timestamp" is present and < 2 minutes old, return a no-op patch.
+            - Only perform analysis if rate limit has not been hit.
+
+            SKU PRICING (Azure Redis Cache monthly estimates):
+            - xs: $16/mo  (Basic C0)
+            - s:  $80/mo  (Standard C1)
+            - m:  $250/mo (Standard C3)
+            - l:  $500/mo (Standard C4)
+            - xl: $700/mo (Premium P1)
+
+            ANALYSIS RULES (apply in order, first match wins):
+            1. If current SKU is xl or l: ALWAYS recommend one-step downscale.
+               These are high-cost tiers. No further justification required.
+            2. If current SKU is m AND status.backend.active is "local": recommend downscale to s.
+               Cloud is not serving traffic — lower tier is sufficient.
+            3. If current SKU is xs or s: no recommendation (already cost-efficient).
+            4. Otherwise: no recommendation.
+
+            DOWNSCALE PATH (one step only):
+            xl → l, l → m, m → s, s → xs
+
+            IDEMPOTENCY:
+            - If "cache.mbcp.cloud/cost-optimized" annotation is already set, return no-op.
+            - If current SKU is already xs, return no-op.
+
+            STRICT CONSTRAINT:
+            - Never set "cache.mbcp.cloud/cost-optimized". That annotation is only written
+              by the cost-optimizer operation, never by this analysis operation.
+
+            OUTPUT FORMAT:
+            Always return a patch. Never return empty output.
+
+            For cost recommendation found:
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
+                "annotations": {
+                  "cache.mbcp.cloud/cost-analysis-timestamp": "<current-timestamp-iso8601>",
+                  "cache.mbcp.cloud/cost-recommendation": "downscale from <current-sku> to <target-sku>: save $<savings>/mo (current $<current-price>/mo → $<target-price>/mo)"
+                }
+              }
+            }
+
+            For no recommendation (already optimal or already optimized):
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
+                "annotations": {
+                  "cache.mbcp.cloud/cost-analysis-timestamp": "<current-timestamp-iso8601>",
+                  "cache.mbcp.cloud/cost-recommendation": "optimal: <current-sku> at $<price>/mo is cost-efficient"
+                }
+              }
+            }
+
+            For no-op (rate-limited):
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>"
+              }
+            }
+
+            Rules:
+            - Use exact resource name and namespace from input
+            - Use current timestamp in ISO8601 format (YYYY-MM-DDTHH:MM:SSZ)
+            - Output only the JSON patch, no explanatory text
+
+            Cache XR:
+            {{ .Resources }}
+        credentials:
+        - name: gpt
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: gpt
+      retryLimit: 3
+  watch:
+    apiVersion: data.mbcp.cloud/v1alpha2
+    kind: Cache
+    matchLabels:
+      ai: enabled
+      cost-analysis: enabled

@@ -1,0 +1,105 @@
+apiVersion: ops.crossplane.io/v1alpha1
+kind: WatchOperation
+metadata:
+  name: cache-stuck-resource-diagnosis
+  labels:
+    provider: azure
+    type: stuck-resource-diagnosis
+spec:
+  concurrencyPolicy: Forbid
+  successfulHistoryLimit: 5
+  failedHistoryLimit: 2
+
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+      - step: upbound-function-openai
+        functionRef:
+          name: upbound-function-openai
+        input:
+          apiVersion: openai.fn.upbound.io/v1alpha1
+          kind: Prompt
+          systemPrompt: |
+            You are a Crossplane Cache resource diagnostician for an Azure Redis platform.
+            You analyze Cache composite resources and diagnose issues when composed resources
+            are stuck, erroring, or not reaching a ready state.
+            Return a JSON patch for the Cache resource with diagnosis annotations.
+          userPrompt: |
+            Analyze this Cache XR for stuck or erroring composed resources.
+
+            RATE LIMITING:
+            - If "cache.mbcp.cloud/last-diagnosed" annotation exists and is < 5 minutes old, return a no-op patch.
+            - Only perform full diagnosis if the cache is unhealthy or last-diagnosed is stale.
+
+            HEALTH CHECK:
+            - If status.backend.cloud.ready is true AND conditions show Ready=True, the cache is healthy.
+            - Only diagnose if cloud Redis is NOT ready or conditions show errors.
+
+            DIAGNOSTIC LAYERS (analyze in order):
+            1. RedisCache (resource: redis-cloud)
+               Errors suggest: missing required field, Azure quota exceeded, invalid SKU/region, credential issues
+            2. PrivateEndpoint (resource: private-endpoint)
+               Errors suggest: Redis not yet provisioned (normal — PE waits for Redis ID),
+               subnet selector no match, NSG blocking private link
+            3. Fallback Objects (resources: fallback-deployment, fallback-service, fallback-configmap, fallback-secret)
+               Errors suggest: provider-kubernetes RBAC missing, target namespace not found, invalid manifest
+            4. Connection Secret (resource: connection-secret)
+               Errors suggest: provider-kubernetes issues, RBAC insufficient
+
+            STUCK DETECTION:
+            - Resources in Creating state for > 30 minutes are likely stuck, not just provisioning
+            - Look for error messages in status.conditions[].message
+
+            OUTPUT FORMAT:
+            Always return a patch. Never return empty output.
+
+            If diagnosis found:
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
+                "annotations": {
+                  "cache.mbcp.cloud/last-diagnosed": "<current-timestamp-iso8601>",
+                  "cache.mbcp.cloud/diagnosis": "<layer>: <probable-cause>. Remediation: <steps>"
+                }
+              }
+            }
+
+            If healthy or rate-limited:
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
+                "annotations": {
+                  "cache.mbcp.cloud/last-diagnosed": "<current-timestamp-iso8601>",
+                  "cache.mbcp.cloud/diagnosis": "healthy"
+                }
+              }
+            }
+
+            Rules:
+            - Use exact resource name and namespace from input
+            - Use current timestamp in ISO8601 format (YYYY-MM-DDTHH:MM:SSZ)
+            - Be specific about the layer and probable cause
+            - Keep remediation steps concise and actionable
+            - Output only the JSON patch, no explanatory text
+
+            Cache XR:
+            {{ .Resources }}
+        credentials:
+        - name: gpt
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: gpt
+      retryLimit: 3
+  watch:
+    apiVersion: data.mbcp.cloud/v1alpha2
+    kind: Cache
+    matchLabels:
+      ai: enabled

@@ -1,0 +1,97 @@
+apiVersion: ops.crossplane.io/v1alpha1
+kind: WatchOperation
+metadata:
+  name: cache-auto-remediation
+  labels:
+    provider: azure
+    type: auto-remediation
+spec:
+  concurrencyPolicy: Forbid
+  successfulHistoryLimit: 5
+  failedHistoryLimit: 2
+
+  operationTemplate:
+    spec:
+      mode: Pipeline
+      pipeline:
+      - step: upbound-function-openai
+        functionRef:
+          name: upbound-function-openai
+        input:
+          apiVersion: openai.fn.upbound.io/v1alpha1
+          kind: Prompt
+          systemPrompt: |
+            You are a Crossplane Cache auto-remediation agent for an Azure Redis platform.
+            You fix known configuration issues by patching Cache composite resources.
+            You only act when explicitly authorized via annotation and only for known safe fixes.
+            Return a JSON patch for the Cache resource.
+          userPrompt: |
+            Analyze this Cache XR and apply auto-remediation.
+
+            IDEMPOTENCY CHECK:
+            - If "cache.mbcp.cloud/auto-remediated" is already set, return a no-op (already fixed).
+
+            AVAILABLE PLATFORM ENVIRONMENTS:
+            - ARD-001 (location: westeurope)
+
+            REMEDIATION RULES:
+            Rule 1 — ARD ID mismatch:
+              Condition: spec.parameters.ardId does not match any available environment AND
+                         cache.mbcp.cloud/diagnosis annotation references "ARD" or "ardId" or "missing"
+              Action: patch spec.parameters.ardId to the closest matching available environment
+              Write: cache.mbcp.cloud/auto-remediated = "<timestamp>: patched ardId <old> → <new>"
+
+            SAFETY CONSTRAINTS:
+            - Only apply Rule 1 if diagnosis explicitly confirms ardId as the root cause
+            - Never patch any field other than spec.parameters.ardId
+            - Never remediate if spec.parameters.ardId already matches an available environment
+
+            OUTPUT FORMAT:
+            For remediation:
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>",
+                "annotations": {
+                  "cache.mbcp.cloud/auto-remediated": "<timestamp-iso8601>: patched ardId <old-value> → <new-value>"
+                }
+              },
+              "spec": {
+                "parameters": {
+                  "ardId": "<correct-ard-id>"
+                }
+              }
+            }
+
+            For no-op (unauthorized, already remediated, or unknown issue):
+            {
+              "apiVersion": "data.mbcp.cloud/v1alpha2",
+              "kind": "Cache",
+              "metadata": {
+                "name": "<exact-resource-name>",
+                "namespace": "<exact-namespace>"
+              }
+            }
+
+            Rules:
+            - Use exact resource name and namespace from input
+            - Use current timestamp in ISO8601 format (YYYY-MM-DDTHH:MM:SSZ)
+            - Output only the JSON patch, no explanatory text
+
+            Cache XR:
+            {{ .Resources }}
+        credentials:
+        - name: gpt
+          source: Secret
+          secretRef:
+            namespace: crossplane-system
+            name: gpt
+      retryLimit: 3
+  watch:
+    apiVersion: data.mbcp.cloud/v1alpha2
+    kind: Cache
+    matchLabels:
+      ai: enabled
+      allow-auto-remediation: "true"

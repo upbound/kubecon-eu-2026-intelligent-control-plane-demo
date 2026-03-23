@@ -1,0 +1,16 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: caches.data.mbcp.cloud
+spec:
+  compositeTypeRef:
+    apiVersion: data.mbcp.cloud/v1alpha2
+    kind: Cache
+  mode: Pipeline
+  pipeline:
+  - functionRef:
+      name: solutions-configuration-cachecache
+    step: cache
+  - functionRef:
+      name: crossplane-contrib-function-auto-ready
+    step: crossplane-contrib-function-auto-ready

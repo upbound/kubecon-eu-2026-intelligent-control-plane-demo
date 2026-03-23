@@ -1,0 +1,16 @@
+apiVersion: data.mbcp.cloud/v1alpha2
+kind: Cache
+metadata:
+  name: example-cache
+  namespace: default
+  labels:
+    ccoe.mbcp.cloud/solution: example-solution
+    ai: enabled
+spec:
+  providerConfigRef:
+    kind: ClusterProviderConfig
+    name: azure-provider
+  parameters:
+    application: example-app
+    ardId: "ARD-001"
+    sku: s

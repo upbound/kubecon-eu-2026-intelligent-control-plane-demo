@@ -1,0 +1,144 @@
+apiVersion: apiextensions.crossplane.io/v2
+kind: CompositeResourceDefinition
+metadata:
+  name: caches.data.mbcp.cloud
+spec:
+  group: data.mbcp.cloud
+  names:
+    categories:
+    - crossplane
+    kind: Cache
+    plural: caches
+  scope: Namespaced
+  versions:
+  - name: v1alpha2
+    referenceable: true
+    schema:
+      openAPIV3Schema:
+        description: Cache is the Schema for the Cache API.
+        properties:
+          spec:
+            description: CacheSpec defines the desired state of Cache.
+            properties:
+              parameters:
+                description: Parameters for the Cache configuration.
+                properties:
+                  application:
+                    description: Workload name used for resource naming and secret targeting.
+                    type: string
+                  ardId:
+                    description: Solution ARD ID used to resolve platform configuration.
+                    type: string
+                  sku:
+                    description: "Cache capacity tier: s=Standard C1, m=Standard C3, l=Standard C4, xl=Premium P1."
+                    enum: [xs, s, m, l, xl]
+                    type: string
+                required:
+                - application
+                - ardId
+                - sku
+                type: object
+              providerConfigRef:
+                default:
+                  kind: ClusterProviderConfig
+                  name: azure-provider
+                properties:
+                  kind:
+                    default: ClusterProviderConfig
+                    type: string
+                  name:
+                    type: string
+                type: object
+            required:
+            - parameters
+            type: object
+          status:
+            description: CacheStatus defines the observed state of Cache.
+            properties:
+              backend:
+                description: Backend describes the active and available cache backends.
+                properties:
+                  active:
+                    description: Active backend — cloud or local fallback.
+                    enum: [local, cloud]
+                    type: string
+                  cloud:
+                    description: Cloud Redis readiness and identity.
+                    properties:
+                      id:
+                        type: string
+                      name:
+                        type: string
+                      ready:
+                        type: boolean
+                    type: object
+                  fallback:
+                    description: In-cluster fallback Redis readiness.
+                    properties:
+                      port:
+                        type: integer
+                      ready:
+                        type: boolean
+                      serviceName:
+                        type: string
+                    type: object
+                  reason:
+                    type: string
+                type: object
+              cacheConnection:
+                description: CacheConnection exposes the stable application-facing connection identifiers.
+                properties:
+                  configMapName:
+                    type: string
+                  port:
+                    type: integer
+                  secretName:
+                    type: string
+                  serviceName:
+                    type: string
+                type: object
+              conditions:
+                description: Conditions of the resource.
+                items:
+                  properties:
+                    lastTransitionTime:
+                      format: date-time
+                      type: string
+                    message:
+                      type: string
+                    reason:
+                      type: string
+                    status:
+                      type: string
+                    type:
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              context:
+                description: Context reflects resolved platform configuration.
+                properties:
+                  clusterConfig:
+                    properties:
+                      env:
+                        type: string
+                      location:
+                        type: string
+                    type: object
+                  solutionConfig:
+                    properties:
+                      keyVaultApp:
+                        type: string
+                      keyVaultInfra:
+                        type: string
+                    type: object
+                type: object
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
