@@ -10,45 +10,43 @@ This Crossplane configuration package demonstrates AI-driven cache management on
 ## Architecture
 
 ```mermaid
-sequenceDiagram
-    participant SRE
-    participant Crossplane
-    participant AI as AI Controller
-    participant Azure
+flowchart TD
+    Setup["<b>setup</b>\ndemo-stuck  ardId=ARD-MISSING\ndemo-costly  sku=xl"]
 
-    SRE->>Crossplane: ./demo.sh setup<br/>(demo-stuck ardId=ARD-MISSING, demo-costly sku=xl)
-    Crossplane->>Azure: reconcile → stuck (no ResourceGroup match)
+    Setup --> S2
 
-    rect rgb(40, 60, 80)
-        Note over SRE,AI: Stage 2 — Intelligent Assistance
-        SRE->>Crossplane: ./demo.sh before-1
-        Crossplane-->>SRE: Unready conditions, cryptic events — no context
-        AI->>Crossplane: watches Cache, detects stuck state
-        AI->>Crossplane: annotate diagnosis + last-diagnosed
-        SRE->>Crossplane: ./demo.sh after-1
-        Crossplane-->>SRE: cache.mbcp.cloud/diagnosis = root cause + steps
+    subgraph S2["Stage 2 — Intelligent Assistance"]
+        direction TB
+        B1["<b>before-1</b>\nSRE sees: Unready conditions\ncryptic events — no context"]
+        AI2["AI Controller\ndetects stuck state\nwrites diagnosis annotation"]
+        A1["<b>after-1</b>\nSRE sees: root cause + remediation steps\ncache.mbcp.cloud/diagnosis"]
+        B1 --> AI2 --> A1
     end
 
-    rect rgb(40, 70, 50)
-        Note over SRE,Azure: Stage 3 — Intelligent Control (Remediation)
-        SRE->>Crossplane: ./demo.sh remediate<br/>(sets allow-auto-remediation=true)
-        AI->>Crossplane: watches label → patches spec.parameters.ardId
-        AI->>Crossplane: annotate auto-remediated
-        Crossplane->>Azure: reconcile with correct ardId → cache recovers
+    S2 --> S3
+
+    subgraph S3["Stage 3 — Intelligent Control · Remediation"]
+        direction TB
+        R1["<b>remediate</b>\nSRE sets allow-auto-remediation=true"]
+        AI3["AI Controller\npatches spec.parameters.ardId\nwrites auto-remediated annotation"]
+        R2["Crossplane reconciles\ncache recovers on Azure"]
+        R1 --> AI3 --> R2
     end
 
-    rect rgb(70, 50, 30)
-        Note over SRE,Azure: Stage 4 — Cost Optimization
-        SRE->>Crossplane: ./demo.sh cost-before
-        Crossplane-->>SRE: sku=xl, no cost context
-        AI->>Crossplane: analyzes usage → annotate cost-recommendation
-        SRE->>Crossplane: ./demo.sh cost-after
-        Crossplane-->>SRE: cache.mbcp.cloud/cost-recommendation = downscale to s
-        SRE->>Crossplane: ./demo.sh cost-optimize<br/>(sets allow-cost-optimization=true)
-        AI->>Crossplane: watches label → patches spec.parameters.sku
-        AI->>Crossplane: annotate cost-optimized
-        Crossplane->>Azure: reprovision at lower SKU
+    S3 --> S4
+
+    subgraph S4["Stage 4 — Cost Optimization"]
+        direction TB
+        C1["<b>cost-before</b>\nSRE sees: sku=xl — no cost context"]
+        AI4["AI Controller\nanalyzes usage\nwrites cost-recommendation annotation"]
+        C2["<b>cost-after</b>\nSRE sees: downscale recommendation"]
+        C3["<b>cost-optimize</b>\nSRE sets allow-cost-optimization=true"]
+        AI5["AI Controller\npatches spec.parameters.sku\nwrites cost-optimized annotation"]
+        C4["Crossplane reconciles\ncache reprovisions at lower SKU"]
+        C1 --> AI4 --> C2 --> C3 --> AI5 --> C4
     end
+
+    S4 --> Cleanup["<b>cleanup</b>"]
 ```
 
 ## Demo Flow
